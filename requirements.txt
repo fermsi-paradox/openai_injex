@@ -1,0 +1,53 @@
+# Core dependencies
+openai>=1.0.0
+psutil>=5.9.0
+pyyaml>=6.0
+requests>=2.31.0
+numpy>=1.24.0
+colorama>=0.4.6  # For cross-platform colored terminal output
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
+
+# Logging and monitoring
+python-json-logger>=2.0.7
+watchdog>=3.0.0
+
+# Network analysis
+scapy>=2.5.0
+netifaces>=0.11.0
+
+# Security and cryptography
+cryptography>=41.0.0
+paramiko>=3.0.0
+
+# Data processing
+pandas>=2.0.0
+python-dateutil>=2.8.2
+
+# System monitoring
+py-cpuinfo>=9.0.0
+GPUtil>=1.4.0
+
+# AI/ML utilities
+tiktoken>=0.5.0
+langchain>=0.0.300
+transformers>=4.30.0
+
+# Web scraping (for log analysis)
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Configuration management
+python-dotenv>=1.0.0
+configparser>=6.0.0
+
+# Firewall management (platform specific)
+python-iptables>=1.0.0  # Linux
+pydivert>=2.1.0  # Windows
+
+# Process management
+psutil>=5.9.0
+setproctitle>=1.3.0 

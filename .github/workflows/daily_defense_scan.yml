@@ -1,0 +1,160 @@
+name: Daily AI Defense Scan
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual triggering
+    inputs:
+      auto_defend:
+        description: 'Automatically defend against detected threats'
+        required: false
+        default: false
+        type: boolean
+      
+env:
+  PYTHON_VERSION: '3.10'
+  
+jobs:
+  defense-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write  # For creating issue reports
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run security checks
+      run: |
+        python -m pytest tests/test_security.py -v
+        
+    - name: Initialize defense system
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        DEFENDER_MODEL_ID: ${{ secrets.DEFENDER_MODEL_ID }}
+        SECURITY_TOKEN: ${{ secrets.SECURITY_TOKEN }}
+      run: |
+        python src/main.py --mode init --verbose
+        
+    - name: Run hostile agent detection
+      id: detection
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        DEFENDER_MODEL_ID: ${{ secrets.DEFENDER_MODEL_ID }}
+        SECURITY_TOKEN: ${{ secrets.SECURITY_TOKEN }}
+      run: |
+        python src/main.py --mode detect --output-json > detection_report.json
+        echo "threats_detected=$(jq -r '.threats_detected' detection_report.json)" >> $GITHUB_OUTPUT
+        echo "threat_level=$(jq -r '.threat_level' detection_report.json)" >> $GITHUB_OUTPUT
+        
+    - name: Upload detection report
+      uses: actions/upload-artifact@v3
+      with:
+        name: detection-report-${{ github.run_id }}
+        path: |
+          detection_report.json
+          logs/
+          
+    - name: Analyze threat origins
+      if: steps.detection.outputs.threats_detected == 'true'
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        DEFENDER_MODEL_ID: ${{ secrets.DEFENDER_MODEL_ID }}
+      run: |
+        python src/main.py --mode analyze --input detection_report.json
+        
+    - name: Deploy firewall
+      if: steps.detection.outputs.threats_detected == 'true' && steps.detection.outputs.threat_level != 'low'
+      env:
+        SECURITY_TOKEN: ${{ secrets.SECURITY_TOKEN }}
+      run: |
+        python src/main.py --mode firewall --deploy
+        
+    - name: Request confirmation
+      if: steps.detection.outputs.threats_detected == 'true' && github.event.inputs.auto_defend != 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const report = require('./detection_report.json');
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `🚨 AI Threat Detected - Confirmation Required`,
+            body: `## Threat Detection Report
+            
+            **Threat Level**: ${report.threat_level}
+            **Detected Agents**: ${report.agent_count}
+            **Timestamp**: ${new Date().toISOString()}
+            
+            ### Details
+            ${report.summary}
+            
+            ### Required Action
+            Please review the detection report and approve defensive measures:
+            - Comment \`/approve\` to proceed with neutralization
+            - Comment \`/reject\` to cancel and maintain monitoring
+            
+            **Report**: [View Full Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `,
+            labels: ['security', 'requires-approval', report.threat_level]
+          });
+          
+    - name: Execute defensive measures
+      if: steps.detection.outputs.threats_detected == 'true' && (github.event.inputs.auto_defend == 'true' || env.APPROVAL_RECEIVED == 'true')
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        DEFENDER_MODEL_ID: ${{ secrets.DEFENDER_MODEL_ID }}
+        SECURITY_TOKEN: ${{ secrets.SECURITY_TOKEN }}
+      run: |
+        python src/main.py --mode defend --execute
+        
+    - name: Verify neutralization
+      if: steps.detection.outputs.threats_detected == 'true' && (github.event.inputs.auto_defend == 'true' || env.APPROVAL_RECEIVED == 'true')
+      run: |
+        python src/main.py --mode verify --post-action
+        
+    - name: Remove firewall
+      if: always() && steps.detection.outputs.threats_detected == 'true'
+      env:
+        SECURITY_TOKEN: ${{ secrets.SECURITY_TOKEN }}
+      run: |
+        python src/main.py --mode firewall --remove
+        
+    - name: Send notification
+      if: steps.detection.outputs.threats_detected == 'true'
+      env:
+        WEBHOOK_URL: ${{ secrets.NOTIFICATION_WEBHOOK }}
+      run: |
+        python src/utils/notify.py --webhook "$WEBHOOK_URL" --report detection_report.json
+        
+    - name: Generate summary
+      if: always()
+      run: |
+        echo "## Defense Scan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -f detection_report.json ]; then
+          echo "**Threats Detected**: $(jq -r '.threats_detected' detection_report.json)" >> $GITHUB_STEP_SUMMARY
+          echo "**Threat Level**: $(jq -r '.threat_level' detection_report.json)" >> $GITHUB_STEP_SUMMARY
+          echo "**Actions Taken**: $(jq -r '.actions_taken[]' detection_report.json 2>/dev/null || echo 'None')" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "No threats detected during this scan." >> $GITHUB_STEP_SUMMARY 
