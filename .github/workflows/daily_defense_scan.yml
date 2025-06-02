@@ -1,10 +1,7 @@
 name: Daily AI Defense Scan
 
 on:
-  schedule:
-    # Run daily at 2 AM UTC
-    - cron: '0 2 * * *'
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:  # Manual triggering only
     inputs:
       auto_defend:
         description: 'Automatically defend against detected threats'
@@ -141,7 +138,7 @@ jobs:
         python src/main.py --mode firewall --remove
         
     - name: Send notification
-      if: steps.detection.outputs.threats_detected == 'true'
+      if: steps.detection.outputs.threats_detected == 'true' && env.WEBHOOK_URL != ''
       env:
         WEBHOOK_URL: ${{ secrets.NOTIFICATION_WEBHOOK }}
       run: |
