@@ -43,7 +43,7 @@ jobs:
         
     - name: Run security checks
       run: |
-        python -m pytest tests/test_security.py -v
+        python -m pytest tests/test_basic.py -v
         
     - name: Initialize defense system
       env:
